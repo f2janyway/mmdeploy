@@ -42,11 +42,22 @@ nvinfer1::DimsExprs TRTBEVPoolV2::getOutputDimensions(
   // input[3] == ranks_feat
   // input[4] == ranks_bev
   nvinfer1::DimsExprs ret;
-  ret.nbDims = 4;
-  ret.d[0] = exprBuilder.constant(1); //Todo support batch>1
-  ret.d[1] = exprBuilder.constant(mOutHeight);
-  ret.d[2] = exprBuilder.constant(mOutWidth);
-  ret.d[3] = inputs[1].d[3];
+  // original
+  // ret.nbDims = 4;
+  // ret.d[0] = exprBuilder.constant(1); //Todo support batch>1
+  // ret.d[1] = exprBuilder.constant(mOutHeight);
+  // ret.d[2] = exprBuilder.constant(mOutWidth);
+  // ret.d[3] = inputs[1].d[3];
+
+  // for vfm case, standard from onnx bev_pool_v2 
+  //N=1, Z=1, H=80, W=128, C=64
+  ret.nbDims = 5;
+
+  ret.d[0] = inputs[0].d[0]; // N:depth_probs
+  ret.d[1] = exprBuilder.constant(1); // Z: single level
+  ret.d[2] = exprBuilder.constant(mOutHeight); // H // 여기 값이 80이어야 함?
+  ret.d[3] = exprBuilder.constant(mOutWidth);  // W // 여기 값이 128이어야 함?
+  ret.d[4] = inputs[1].d[3]; // C: feat
   return ret;
 }
 
@@ -73,7 +84,9 @@ void TRTBEVPoolV2::configurePlugin(const nvinfer1::DynamicPluginTensorDesc *inpu
                                      const nvinfer1::DynamicPluginTensorDesc *outputs,
                                      int nbOutputs) TRT_NOEXCEPT {
   // Validate input arguments
-
+printf("input[1] nbDims=%d : ", inputs[1].desc.dims.nbDims);
+for(int i=0;i<inputs[1].desc.dims.nbDims;i++) printf("%d ", inputs[1].desc.dims.d[i]);
+printf("\n");
   ASSERT(nbInputs == 7);
   ASSERT(nbOutputs == 1);
 }
@@ -91,15 +104,25 @@ int TRTBEVPoolV2::enqueue(const nvinfer1::PluginTensorDesc *inputDesc,
   nvinfer1::Dims feat_dims = inputDesc[1].dims; // bnhwc
   nvinfer1::Dims interval_dims = inputDesc[5].dims; // n
   nvinfer1::Dims out_dims = outputDesc[0].dims; //bhwc
+  // int num_points = out_dims.d[0]*out_dims.d[1]*out_dims.d[2]*out_dims.d[3];
   auto data_type = inputDesc[0].type;
-  int num_points = out_dims.d[0]*out_dims.d[1]*out_dims.d[2]*out_dims.d[3];
   switch (data_type) {
-    case nvinfer1::DataType::kFLOAT:
-      bev_pool_v2_set_zero(num_points, (float *)outputs[0]);
-      bev_pool_v2(feat_dims.d[3], interval_dims.d[0], (float *)inputs[0], (float *)inputs[1],
+    case nvinfer1::DataType::kFLOAT:{
+
+      int numel = 1;
+      for(int i=0; i<out_dims.nbDims; ++i){
+        numel *= out_dims.d[i];
+      }
+      bev_pool_v2_set_zero(numel, (float *)outputs[0]);
+  
+      int C = feat_dims.d[feat_dims.nbDims -1];
+  
+      bev_pool_v2(C, interval_dims.d[0], (float *)inputs[0], (float *)inputs[1],
         (int *)inputs[2], (int *)inputs[3], (int *)inputs[4], (int *)inputs[5],(int *)inputs[6], (float *)outputs[0],
         stream);
       break;
+    }
+    
     default:
       return 1;
       break;
@@ -145,9 +168,14 @@ const char *TRTBEVPoolV2Creator::getPluginVersion() const TRT_NOEXCEPT { return 
 
 nvinfer1::IPluginV2 *TRTBEVPoolV2Creator::createPlugin(
     const char *name, const nvinfer1::PluginFieldCollection *fc) TRT_NOEXCEPT {
+  // int outWidth = 128;
+  // int outHeight = 128;
   int outWidth = 128;
-  int outHeight = 128;
+  int outHeight = 80;
+
+  std::cout << "TRTBEVPoolV2Creator::createPlugin" << std::endl;
   for (int i = 0; i < fc->nbFields; i++) {
+    std::cout << "field name: " << fc->fields[i].name << std::endl;
     if (fc->fields[i].data == nullptr) {
       continue;
     }
@@ -163,9 +191,14 @@ nvinfer1::IPluginV2 *TRTBEVPoolV2Creator::createPlugin(
   }
   ASSERT(outHeight > 0);
   ASSERT(outWidth > 0);
+  std::cout << "outHeight: " << outHeight << ", outWidth: " << outWidth << std::endl;
 
   TRTBEVPoolV2 *plugin = new TRTBEVPoolV2(name, outWidth, outHeight);
+  std::cout << "after new plugin" << std::endl;
+  std::cout << "plugin namespace: " << plugin->getPluginNamespace() << std::endl;
+  std::cout << "creator namespace: " << getPluginNamespace() << std::endl;
   plugin->setPluginNamespace(getPluginNamespace());
+  std::cout << "end" << std::endl;
   return plugin;
 }
 

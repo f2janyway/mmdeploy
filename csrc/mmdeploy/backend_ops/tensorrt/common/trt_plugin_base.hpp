@@ -67,6 +67,7 @@ class TRTPluginCreatorBase : public nvinfer1::IPluginCreator {
   }
 
   const char *getPluginNamespace() const TRT_NOEXCEPT override { return mNamespace.c_str(); }
+  // const char *getPluginNamespace() const TRT_NOEXCEPT override { return "custom_ops"; }
 
  protected:
   nvinfer1::PluginFieldCollection mFC;
