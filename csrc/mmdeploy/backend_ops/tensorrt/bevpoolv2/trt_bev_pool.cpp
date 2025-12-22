@@ -84,11 +84,16 @@ void TRTBEVPoolV2::configurePlugin(const nvinfer1::DynamicPluginTensorDesc *inpu
                                      const nvinfer1::DynamicPluginTensorDesc *outputs,
                                      int nbOutputs) TRT_NOEXCEPT {
   // Validate input arguments
-printf("input[1] nbDims=%d : ", inputs[1].desc.dims.nbDims);
-for(int i=0;i<inputs[1].desc.dims.nbDims;i++) printf("%d ", inputs[1].desc.dims.d[i]);
-printf("\n");
   ASSERT(nbInputs == 7);
   ASSERT(nbOutputs == 1);
+  for (int i=0;i<nbInputs;i++){
+    auto t = inputs[i].desc.type;
+    auto f = inputs[i].desc.format;
+    printf("[bev_pool_v2] input %d type=%d format=%d nbDims=%d\n",
+           i, (int)t, (int)f, inputs[i].desc.dims.nbDims);
+  }
+  printf("[bev_pool_v2] output type=%d format=%d nbDims=%d\n",
+         (int)outputs[0].desc.type, (int)outputs[0].desc.format, outputs[0].desc.dims.nbDims);
 }
 
 size_t TRTBEVPoolV2::getWorkspaceSize(const nvinfer1::PluginTensorDesc *inputs, int nbInputs,
