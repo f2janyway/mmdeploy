@@ -13,7 +13,7 @@ namespace mmdeploy {
 
 class TRTBEVPoolV2 : public TRTPluginBase {
  public:
-  TRTBEVPoolV2(const std::string &name, int outWidth, int outHeight);
+  TRTBEVPoolV2(const std::string &name, int outWidth, int outHeight, int outZ);
 
   TRTBEVPoolV2(const std::string name, const void *data, size_t length);
 
@@ -61,6 +61,7 @@ class TRTBEVPoolV2 : public TRTPluginBase {
  private:
   int mOutWidth;
   int mOutHeight;
+  int mOutZ;
 };
 
 class TRTBEVPoolV2Creator : public TRTPluginCreatorBase {

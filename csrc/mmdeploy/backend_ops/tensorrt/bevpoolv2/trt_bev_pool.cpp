@@ -15,19 +15,21 @@ static const char *PLUGIN_VERSION{"1"};
 static const char *PLUGIN_NAME{"bev_pool_v2"};
 }  // namespace
 
-TRTBEVPoolV2::TRTBEVPoolV2(const std::string &name, int outWidth, int outHeight) :
+TRTBEVPoolV2::TRTBEVPoolV2(const std::string &name, int outWidth, int outHeight,int outZ) :
       TRTPluginBase(name),
       mOutWidth(outWidth),
-      mOutHeight(outHeight){}
+      mOutHeight(outHeight),
+      mOutZ(outZ){}
 
 TRTBEVPoolV2::TRTBEVPoolV2(const std::string name, const void *data, size_t length)
     : TRTPluginBase(name) {
   deserialize_value(&data, &length, &mOutWidth);
   deserialize_value(&data, &length, &mOutHeight);
+  deserialize_value(&data, &length, &mOutZ);
 }
 
 nvinfer1::IPluginV2DynamicExt *TRTBEVPoolV2::clone() const TRT_NOEXCEPT {
-  TRTBEVPoolV2 *plugin = new TRTBEVPoolV2(mLayerName, mOutWidth, mOutHeight);
+  TRTBEVPoolV2 *plugin = new TRTBEVPoolV2(mLayerName, mOutWidth, mOutHeight, mOutZ);
   plugin->setPluginNamespace(getPluginNamespace());
 
   return plugin;
@@ -54,31 +56,71 @@ nvinfer1::DimsExprs TRTBEVPoolV2::getOutputDimensions(
   ret.nbDims = 5;
 
   ret.d[0] = inputs[0].d[0]; // N:depth_probs
-  ret.d[1] = exprBuilder.constant(1); // Z: single level
+  // ret.d[1] = exprBuilder.constant(1); // Z: single level
+  ret.d[1] = exprBuilder.constant(mOutZ);
   ret.d[2] = exprBuilder.constant(mOutHeight); // H // 여기 값이 80이어야 함?
   ret.d[3] = exprBuilder.constant(mOutWidth);  // W // 여기 값이 128이어야 함?
   ret.d[4] = inputs[1].d[3]; // C: feat
   return ret;
 }
 
-bool TRTBEVPoolV2::supportsFormatCombination(int pos, const nvinfer1::PluginTensorDesc *ioDesc,
-                                               int nbInputs, int nbOutputs) TRT_NOEXCEPT {
-  // input[0] == depth->kFLOAT
-  // input[1] == feat->kFLOAT
-  // input[2] == ranks_depth->kINT32
-  // input[3] == ranks_feat->kINT32
-  // input[4] == ranks_bev->kINT32
-  // input[5] == interval_starts->kINT32
-  // input[6] == interval_lengths->kINT32
-  // output[0] == bev_feat->kFLOAT
-  if (pos == 0 || pos==1 || pos == 7) {
-    return (ioDesc[pos].type == nvinfer1::DataType::kFLOAT &&
-            ioDesc[pos].format == nvinfer1::TensorFormat::kLINEAR);
-  } else {
-    return (ioDesc[pos].type == nvinfer1::DataType::kINT32 &&
-            ioDesc[pos].format == nvinfer1::TensorFormat::kLINEAR);
+//bool TRTBEVPoolV2::supportsFormatCombination(int pos, const nvinfer1::PluginTensorDesc *ioDesc,
+//                                               int nbInputs, int nbOutputs) TRT_NOEXCEPT {
+//  // input[0] == depth->kFLOAT
+//  // input[1] == feat->kFLOAT
+//  // input[2] == ranks_depth->kINT32
+//  // input[3] == ranks_feat->kINT32
+//  // input[4] == ranks_bev->kINT32
+//  // input[5] == interval_starts->kINT32
+//  // input[6] == interval_lengths->kINT32
+//  // output[0] == bev_feat->kFLOAT
+//  if (pos == 0 || pos==1 || pos == 7) {
+//    return (ioDesc[pos].type == nvinfer1::DataType::kFLOAT &&
+//            ioDesc[pos].format == nvinfer1::TensorFormat::kLINEAR);
+//  } else {
+//    return (ioDesc[pos].type == nvinfer1::DataType::kINT32 &&
+//            ioDesc[pos].format == nvinfer1::TensorFormat::kLINEAR);
+//  }
+//}
+
+
+bool TRTBEVPoolV2::supportsFormatCombination(
+    int pos, const nvinfer1::PluginTensorDesc* ioDesc,
+    int nbInputs, int nbOutputs) TRT_NOEXCEPT
+{
+  // total = nbInputs + nbOutputs = 7 + 1 = 8
+  // inputs: 0..6, output: 7
+
+  const auto& in0 = ioDesc[0];
+
+  // depth_probs (pos0): FP16 or FP32, LINEAR
+  if (pos == 0) {
+    return ( (ioDesc[pos].type == nvinfer1::DataType::kHALF ||
+              ioDesc[pos].type == nvinfer1::DataType::kFLOAT) &&
+             ioDesc[pos].format == nvinfer1::TensorFormat::kLINEAR );
   }
+
+  // feat (pos1): must match input0 type/format
+  if (pos == 1) {
+    return ( ioDesc[pos].type   == in0.type &&
+             ioDesc[pos].format == in0.format );
+  }
+
+  // ranks/interval (pos2..6): INT32, LINEAR
+  if (pos >= 2 && pos <= 6) {
+    return ( ioDesc[pos].type == nvinfer1::DataType::kINT32 &&
+             ioDesc[pos].format == nvinfer1::TensorFormat::kLINEAR );
+  }
+
+  // output (pos7): must match input0 type/format
+  if (pos == 7) {
+    return ( ioDesc[pos].type   == in0.type &&
+             ioDesc[pos].format == in0.format );
+  }
+
+  return false;
 }
+
 
 void TRTBEVPoolV2::configurePlugin(const nvinfer1::DynamicPluginTensorDesc *inputs, int nbInputs,
                                      const nvinfer1::DynamicPluginTensorDesc *outputs,
@@ -150,12 +192,13 @@ const char *TRTBEVPoolV2::getPluginVersion() const TRT_NOEXCEPT { return PLUGIN_
 int TRTBEVPoolV2::getNbOutputs() const TRT_NOEXCEPT { return 1; }
 
 size_t TRTBEVPoolV2::getSerializationSize() const TRT_NOEXCEPT {
-  return serialized_size(mOutWidth) + serialized_size(mOutHeight);
+  return serialized_size(mOutWidth) + serialized_size(mOutHeight) + serialized_size(mOutZ);
 }
 
 void TRTBEVPoolV2::serialize(void *buffer) const TRT_NOEXCEPT {
   serialize_value(&buffer, mOutWidth);
   serialize_value(&buffer, mOutHeight);
+  serialize_value(&buffer, mOutZ);
 }
 
 ////////////////////// creator /////////////////////////////
@@ -177,6 +220,7 @@ nvinfer1::IPluginV2 *TRTBEVPoolV2Creator::createPlugin(
   // int outHeight = 128;
   int outWidth = 128;
   int outHeight = 80;
+  int outZ = 1;
 
   std::cout << "TRTBEVPoolV2Creator::createPlugin" << std::endl;
   for (int i = 0; i < fc->nbFields; i++) {
@@ -186,6 +230,9 @@ nvinfer1::IPluginV2 *TRTBEVPoolV2Creator::createPlugin(
     }
     std::string field_name(fc->fields[i].name);
 
+    if (field_name == "output_z") {
+      outZ = static_cast<const int*>(fc->fields[i].data)[0];
+    }
     if (field_name.compare("output_height") == 0) {
       outHeight = static_cast<const int *>(fc->fields[i].data)[0];
     }
@@ -196,9 +243,11 @@ nvinfer1::IPluginV2 *TRTBEVPoolV2Creator::createPlugin(
   }
   ASSERT(outHeight > 0);
   ASSERT(outWidth > 0);
-  std::cout << "outHeight: " << outHeight << ", outWidth: " << outWidth << std::endl;
+  std::cout << "outZ: " << outZ
+            << ", outHeight: " << outHeight
+            << ", outWidth: " << outWidth << std::endl;
 
-  TRTBEVPoolV2 *plugin = new TRTBEVPoolV2(name, outWidth, outHeight);
+  TRTBEVPoolV2 *plugin = new TRTBEVPoolV2(name, outWidth, outHeight,outZ);
   std::cout << "after new plugin" << std::endl;
   std::cout << "plugin namespace: " << plugin->getPluginNamespace() << std::endl;
   std::cout << "creator namespace: " << getPluginNamespace() << std::endl;
