@@ -8,5 +8,6 @@ make -j$(nproc) && make install
 
 
 cp lib/libmmdeploy_tensorrt_ops.so ~/code/stereo_5_split
+cp lib/libmmdeploy_tensorrt_ops.so ~/code/sequor_vfm_deploy/trt_engine/
 
 

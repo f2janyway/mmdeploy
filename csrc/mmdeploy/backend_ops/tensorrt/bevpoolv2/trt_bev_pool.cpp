@@ -53,14 +53,43 @@ nvinfer1::DimsExprs TRTBEVPoolV2::getOutputDimensions(
 
   // for vfm case, standard from onnx bev_pool_v2 
   //N=1, Z=1, H=80, W=128, C=64
-  ret.nbDims = 5;
+  //ret.nbDims = 5;
+  //ret.d[0] = inputs[0].d[0]; // N:depth_probs
+  //// ret.d[1] = exprBuilder.constant(1); // Z: single level
+  //ret.d[1] = exprBuilder.constant(mOutZ);
+  //ret.d[2] = exprBuilder.constant(mOutHeight); // H // 여기 값이 80이어야 함?
+  //ret.d[3] = exprBuilder.constant(mOutWidth);  // W // 여기 값이 128이어야 함?
+  //ret.d[4] = inputs[1].d[2]; // C: feat
+                             //
 
-  ret.d[0] = inputs[0].d[0]; // N:depth_probs
-  // ret.d[1] = exprBuilder.constant(1); // Z: single level
-  ret.d[1] = exprBuilder.constant(mOutZ);
-  ret.d[2] = exprBuilder.constant(mOutHeight); // H // 여기 값이 80이어야 함?
-  ret.d[3] = exprBuilder.constant(mOutWidth);  // W // 여기 값이 128이어야 함?
-  ret.d[4] = inputs[1].d[3]; // C: feat
+  // 원하는 출력: (B, C, Z, H, W)
+  //ret.nbDims = 5;
+  //ret.d[0] = inputs[0].d[0];                 // B
+  //ret.d[1] = inputs[1].d[4];                 // C  (feat: B N H W C)
+  //ret.d[2] = exprBuilder.constant(mOutZ);    // Z
+  //ret.d[3] = exprBuilder.constant(mOutHeight); // H
+  //ret.d[4] = exprBuilder.constant(mOutWidth);  // W
+
+  // ONNX의 /m/bev_pool_v2_output_0 기대: (B, Z, H, W, C)
+  ret.nbDims = 5;
+  ret.d[0] = inputs[0].d[0];                 // B
+  ret.d[1] = exprBuilder.constant(mOutZ);    // Z
+  ret.d[2] = exprBuilder.constant(mOutHeight); // H
+  ret.d[3] = exprBuilder.constant(mOutWidth);  // W
+  ret.d[4] = inputs[1].d[4];                 // C  (feat: B N H W C)
+
+  std::cout << "[bev_pool_v2] getOutputDimensions called. "
+          << "outZ=" << mOutZ << " outH=" << mOutHeight << " outW=" << mOutWidth << std::endl;
+
+
+  std::cout << "[bev_pool_v2] out dims will be: "
+          << "B=" << inputs[0].d[0]->getConstantValue()
+          << " C=" << inputs[1].d[4]->getConstantValue()
+          << " Z=" << mOutZ
+          << " H=" << mOutHeight
+          << " W=" << mOutWidth
+          << std::endl;
+
   return ret;
 }
 
@@ -136,6 +165,11 @@ void TRTBEVPoolV2::configurePlugin(const nvinfer1::DynamicPluginTensorDesc *inpu
   }
   printf("[bev_pool_v2] output type=%d format=%d nbDims=%d\n",
          (int)outputs[0].desc.type, (int)outputs[0].desc.format, outputs[0].desc.dims.nbDims);
+  auto d = inputs[1].desc.dims;
+  printf("[bev_pool_v2] feat dims: nbDims=%d : ", d.nbDims);
+  for (int k=0;k<d.nbDims;k++) printf("%d ", d.d[k]);
+  printf("\n");
+
 }
 
 size_t TRTBEVPoolV2::getWorkspaceSize(const nvinfer1::PluginTensorDesc *inputs, int nbInputs,
