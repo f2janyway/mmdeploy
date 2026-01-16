@@ -72,11 +72,14 @@ nvinfer1::DimsExprs TRTBEVPoolV2::getOutputDimensions(
 
   // ONNX의 /m/bev_pool_v2_output_0 기대: (B, Z, H, W, C)
   ret.nbDims = 5;
+  // real shape py code return from bev_poool 
+  // [1, 64, 128, 128, 64], 
+  // [B, Dz, Dy, Dx, C]
   ret.d[0] = inputs[0].d[0];                 // B
   ret.d[1] = exprBuilder.constant(mOutZ);    // Z
   ret.d[2] = exprBuilder.constant(mOutHeight); // H
   ret.d[3] = exprBuilder.constant(mOutWidth);  // W
-  ret.d[4] = inputs[1].d[4];                 // C  (feat: B N H W C)
+  ret.d[4] = inputs[1].d[4];                // C 
 
   std::cout << "[bev_pool_v2] getOutputDimensions called. "
           << "outZ=" << mOutZ << " outH=" << mOutHeight << " outW=" << mOutWidth << std::endl;
@@ -252,11 +255,23 @@ nvinfer1::IPluginV2 *TRTBEVPoolV2Creator::createPlugin(
     const char *name, const nvinfer1::PluginFieldCollection *fc) TRT_NOEXCEPT {
   // int outWidth = 128;
   // int outHeight = 128;
-  int outWidth = 128;
-  int outHeight = 80;
-  int outZ = 1;
+
+
+  // first ver 448,244?
+  // int outWidth = 128;
+  // int outHeight = 80;
+  //
+  // onnx output of img_view_transformer
+  // 192.120 img(h420,w672)
+  // not important dont use it but use onnx attr instead
+  int outWidth = 0;
+  int outHeight = 0;
+  int outZ = 0;
 
   std::cout << "TRTBEVPoolV2Creator::createPlugin" << std::endl;
+  // std::cout << "outZ: " << outZ
+  //           << ", outHeight: " << outHeight
+  //           << ", outWidth: " << outWidth << std::endl;
   for (int i = 0; i < fc->nbFields; i++) {
     std::cout << "field name: " << fc->fields[i].name << std::endl;
     if (fc->fields[i].data == nullptr) {
